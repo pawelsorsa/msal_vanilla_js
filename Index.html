@@ -1,0 +1,180 @@
+<html>
+<head>
+  <script type="text/javascript" src="https://alcdn.msauth.net/browser/2.17.0/js/msal-browser.min.js"></script>
+  <script type="text/javascript">
+    var loc = window.location;
+    var baseUrl = loc.protocol + "//" + loc.hostname + (loc.port ? ":" + loc.port : "");
+    var tenantName = 'TENANT_NAME.b2clogin.com';
+    var b2cTenant = `https://${tenantName}`;
+    var msalConfig = {
+      auth: {
+        clientId: "pd11bbaf-3b12-4aec-8a38-863f561e47de",
+        authority: `${b2cTenant}/TENANT_NAME.onmicrosoft.com/B2C_1_signupsignin`,
+        knownAuthorities: [`${b2cTenant}/TENANT_NAME.onmicrosoft.com/B2C_1_signupsignin`],
+        redirectUri: this.baseUrl,
+        postLogoutRedirectUri: this.baseUrl, //+ "/logout",
+        navigateToLoginRequestUrl: true
+      },
+      cache: {
+        cacheLocation: 'sessionStorage',
+        storeAuthStateInCookie: true
+      },
+      system: {
+        iframeHashTimeout: 10000,
+        tokenRenewalOffsetSeconds: 300,
+        navigateFrameWait: 500,
+      },
+    };
+
+    var scopes = ["offline_access", "openId", "https://TENANT_NAME.onmicrosoft.com/ac5b84dd-3635-4b91-9023-5caca1704c37/SOME_API.Read"]
+    var msalnstance = new msal.PublicClientApplication(this.msalConfig);
+    this.msalnstance.handleRedirectPromise().then((tokenResponse) => {
+      if (tokenResponse) {
+        console.log(JSON.stringify(tokenResponse));
+      }
+    }).catch((error) => { console.log(error); });
+
+    var accounts = this.msalnstance.getAllAccounts();
+    var account = this.msalnstance.getAllAccounts()[0];
+    var accessToken = '';
+
+    this.getTokenRequest = function () {
+      var account = this.getAccount();
+
+      return {
+        scopes: this.scopes,
+        loginHint: account?.name ?? ' ',
+        authority: this.msalConfig.auth.authority,
+        redirectUri: this.msalConfig.auth.redirectUri,
+        account: account,
+        navigateToLoginRequestUrl: false
+      }
+    };
+
+    this.autoSignIn = function () {
+      var request = this.getTokenRequest();
+      // request.scopes = [this.msalConfig.auth.clientId]; // pass only client id to refresh the token in ssoSilent    
+      var r = request.account ? this.msalnstance.acquireTokenSilent(request) : this.msalnstance.ssoSilent(request);
+      r.then(function (accessTokenResponse) {
+        this.handleTokenResponse(accessTokenResponse);
+      }).catch(function (error) {
+        if (!error?.errorMessage?.includes('AADB2C90077')) {
+          console.log(JSON.stringify(error.errorMessage));
+        }
+        this.handleTokenResponse(null);
+      });
+    };
+
+    this.logIn = function () {
+      this.msalnstance.loginRedirect(this.getTokenRequest()).then(function (accessTokenResponse) {
+        this.handleTokenResponse(accessTokenResponse);
+      }).catch(function (error) {
+        console.log(error);
+      });
+    }
+
+    this.logout = function () {
+      var account = this.getAccount();
+      this.msalnstance.logout({
+        account: account
+      }).then(function () {
+        this.handleTokenResponse(null);
+      }).catch(function (error) {
+        console.log(error);
+      });
+    }
+
+    function logInLogOut() {
+      if (!this.getAccount()) {
+        this.logIn();
+      } else {
+        this.logout();
+      }
+    }
+
+    function signInAnotherAccount() {
+      var request = this.getTokenRequest();
+      request.account = null;
+      request.loginHint = '';
+      request.prompt = 'login'
+      this.msalnstance.loginRedirect(request).then(function (accessTokenResponse) {
+        this.handleTokenResponse(accessTokenResponse);
+      }).catch(function (error) {
+        console.log(error);
+      });
+    }
+
+    this.getAccount = function () {
+      var accounts = this.msalnstance.getAllAccounts();
+      return accounts[0];
+    }
+
+    this.handleTokenResponse = function (accessTokenResponse) {
+      this.accessToken = accessTokenResponse?.accessToken;
+      this.accounts = this.msalnstance.getAllAccounts();
+      this.account = this.accounts[0];
+
+      var token = document.getElementById('token');
+      token.innerHTML = this.accessToken ? this.accessToken : '';
+
+      var parsedToken = document.getElementById('parsedToken');
+      try {
+        parsedToken.innerHTML = this.accessToken ? JSON.stringify(JSON.parse(atob(this.accessToken?.split('.')[1]))) : '';
+      } catch (e) {
+        parsedToken.innerHTML = '';
+      }
+
+      var authStatus = document.getElementById('accounts');
+      if(this.accounts) {
+        authStatus.innerHTML = 'Cached accounts: <br>';
+        this.accounts.forEach(element => {          
+          authStatus.innerHTML += element.homeAccountId + ' ' + element.name + '<br>';
+        });
+        authStatus.innerHTML += '<br><br>'
+      } else {
+        authStatus.innerHTML = '';
+      }
+
+
+      var authStatus = document.getElementById('authStatus');
+      authStatus.innerHTML = this.account ? 'Hello ' + this.account.name : "You are not logged in.";
+
+      var btnSubmit = document.getElementById('btnSubmit');
+      btnSubmit.value = this.account ? 'Logout ' : "Login";
+    }
+
+    this.redirectToMainPage = function () {
+      setTimeout(function () { location.href = ''; }, 100);
+    }
+
+    this.init = function () {
+      this.autoSignIn();
+    }
+
+    window.onload = function () {
+      this.init();
+    };
+  </script>
+</head>
+
+<body>
+  <h2>Azure AD B2C Login example</h2>
+  <div id="accounts"></div>
+  <div id="authStatus">
+    Checking status...
+  </div>
+  <div>
+    <input id="btnSubmit" class="btn-primary" type="submit" onClick="logInLogOut();" value="Checking status...">
+  </div>
+  <div>
+    <input id="btnSubmit" class="btn-primary" type="submit" onClick="signInAnotherAccount();" value="Sign in with another account">
+  </div>
+  <br />
+  <br />
+  <div id="token"></div>
+  <br />
+  <br />
+  <div id="parsedToken"></div>
+</body>
+
+</html>
